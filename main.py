@@ -23,6 +23,14 @@ class Bird:
         self.color = COLORS[0]
         self.wing_phase = 0
 
+    def flap(self):
+        self.vy = self.flap
+
+    def update(self):
+        self.vy += GRAVITY
+        self.y += self.vy
+        self.wing_phase += 0.25
+
 
 def main():
     pygame.init()
@@ -33,6 +41,25 @@ def main():
 
     bird = Bird()
     state = "idle"
+
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            
+            if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+                if event.type == pygame.KEYDOWN and event.key != pygame.K_SPACE:
+                    continue
+
+                if state == "idle":
+                    state = "play"
+                
+                bird.flap()
+
+
+    pygame.display.flip()
+    clock.tick(FPS)
 
 if __name__ == "__main__":
     main()
