@@ -1,6 +1,9 @@
 import pygame
 import sys
 import random
+import json
+import os
+
 
 # Constants
 W, H = 400, 500
@@ -15,6 +18,8 @@ BIRD_X = 80
 BIRD_R = 16
 FPS = 60
 GAP_DRECREASE = 3
+SAVE_FILE = "flappy_score.json"
+
 
 COLORS = [
     (127, 119, 221),
@@ -32,13 +37,40 @@ def rc():
 def darken(color, amount=40):
     return tuple(max(0, c - amount) for c in color)
 
+def draw_text_centered(screen, font, text, y, color = (255,255,255)):
+    surf = font.render(text, True, color)
+    screen.blit(surf, (W//2 - surf.get_width() // 2, y))
 
+
+#LOAD AND SAVE FILE
+def load_best():
+    if os.path.exists(SAVE_FILE):
+        try:
+            with open(SAVE_FILE, "r") as f:
+                data = json.load(f)
+                return data.get("best", 0)
+        except(json.JSONDecodeError, KeyError):
+            return 0
+    return 0
+
+def save_best(best):
+    with open(SAVE_FILE, "w") as f:
+        json.dump({"best": best}, f)
+
+
+#BIRB
 class Bird:
     def __init__(self):
         self.y = H // 2
         self.vy = 0
         self.color = COLORS[0]
         self.wing_phase = 0
+
+        self.dead = False
+        self.death_timer = 0
+        self.death_flash = 0
+        self.death_x = float(BIRD_X)
+
 
     def flap(self):
         self.vy = FLAP 
@@ -48,23 +80,48 @@ class Bird:
         self.y += self.vy
         self.wing_phase += 0.25
 
+    def die(self):
+        if not self.dead:
+            self.dead = True
+            self.death_timer = 0
+            self.death_flash = 8
+            self.vy = FLAP * 0.6
+
+    def update_death(self):
+        self.vy += GRAVITY * 1.4
+        self.y += self.vy
+        self.death_x -= 1.2
+        self.wing_phase += 0.1
+        if self.death_flash > 0:
+            self.death_flash -= 1
+        self.death_timer += 1
+
+    def death_done(self):
+        return self.y - BIRD_R > H
+
     def draw(self, screen):
-        pygame.draw.ellipse(screen, self.color,
-            (BIRD_X - BIRD_R, int(self.y) - BIRD_R - 3, BIRD_R * 2, (BIRD_R - 3) * 2))
+
+        color = (255,255,255) if self.death_flash > 0 else self.color
+        bx = int(self.death_x) if self.dead else BIRD_X
+        
+        pygame.draw.ellipse(screen, color,
+            (bx - BIRD_R, int(self.y) - BIRD_R - 3, BIRD_R * 2, (BIRD_R - 3) * 2))
         
         pygame.draw.ellipse(screen, (255, 255, 255),
-            (BIRD_X + 2, int(self.y) - 9, 10, 8))
+            (bx + 2, int(self.y) - 9, 10, 8))
         
         pygame.draw.circle(screen, (30, 30, 30),
-            (BIRD_X + 8, int(self.y) - 6), 3)
+            (bx + 8, int(self.y) - 6), 3)
         
-        beak = [(BIRD_X + 14, int(self.y) - 3),
-                (BIRD_X + 22, int(self.y)),
-                (BIRD_X + 14, int(self.y) + 3)]
+        beak = [(bx + 14, int(self.y) - 3),
+                (bx + 22, int(self.y)),
+                (bx + 14, int(self.y) + 3)]
+        
         pygame.draw.polygon(screen, (239, 159, 39), beak)
         flap_offset = int(8 * abs(pygame.math.Vector2(1, 0).rotate(
             self.wing_phase * 57.3).y))
-        wing_rect = (BIRD_X - BIRD_R - 4, int(self.y) + flap_offset - 5, 14, 8)
+        
+        wing_rect = (bx - BIRD_R - 4, int(self.y) + flap_offset - 5, 14, 8)
         pygame.draw.ellipse(screen, darken(self.color, 30), wing_rect)
 
     def get_rect(self): 
@@ -101,6 +158,27 @@ class Pipe:
     def off_screen(self):
         return self.x < -PIPE_W - 10
 
+#GAME OVER LOL
+def draw_game_over(screen, font_big, font_sm, score, best):
+    overlay = pygame.Surface((W, H), pygame.SRCALPHA)
+    overlay.fill((13, 13, 13, 160))
+    screen.blit(overlay, (0, 0))
+ 
+    card_w, card_h = 280, 170
+    card_x, card_y = W // 2 - card_w // 2, H // 2 - card_h // 2
+    pygame.draw.rect(screen, (30, 30, 30), (card_x, card_y, card_w, card_h), border_radius=12)
+    pygame.draw.rect(screen, (60, 60, 60), (card_x, card_y, card_w, card_h), width=1, border_radius=12)
+
+    draw_text_centered(screen, font_big, "GAME OVER", card_y + 24)
+    draw_text_centered(screen, font_sm, f"Score: {score}", card_y + 72, (180,180,180))
+
+    new_best = score >= best and score > 0
+    best_color = (239, 159, 39) if new_best else (180,180,180)
+    best_label = (f"Best:   {best} (NEW!!!)" if new_best else f"Best:   {best}")
+    
+    draw_text_centered(screen, font_sm, best_label, card_y + 98, best_color)
+    draw_text_centered(screen, font_sm, "Click or Space to retry", card_y + 140, (120, 120, 120))
+ 
 
 def new_game():
     global GAP
@@ -116,12 +194,19 @@ def main():
     screen = pygame.display.set_mode((W, H))
     pygame.display.set_caption("Flappy Birb")
     clock = pygame.time.Clock()
+
+    font_big = pygame.font.SysFont("sans-serif", 28)
     font_hud = pygame.font.SysFont("sans-serif", 18)
     font_sm = pygame.font.SysFont("sans-serif", 15)
- 
+    
+    best = load_best()
+
     bird, pipes, score = new_game()
-    state = "idle"
  
+    #STATES = IDLE/PLAYING/DYING/DEAD
+    state = "idle"
+
+
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -136,9 +221,10 @@ def main():
                 elif state == "idle":
                     state = "play"
                     bird.flap()
-                else:
+                elif state == "play":
                     bird.flap()
  
+
         if state == "play":
             global GAP
             bird.update()
@@ -154,28 +240,39 @@ def main():
                     score += 1
                     print(score)
                     GAP = max(MIN_GAP, GAP - GAP_DRECREASE)
- 
+                    if score > best:
+                        best = score
+                        save_best(score)
+
             bird_rect = bird.get_rect()
-            if bird.y - BIRD_R < 0 or bird.y + BIRD_R > H:
+            hit = bird.y - BIRD_R < 0 or bird.y + BIRD_R > H
+            hit = hit or any(p.collides(bird_rect) for p in pipes)
+            if hit:
+                bird.die()
+                state = "dying"
+            
+        elif state == "dying":
+            bird.update_death()
+            if bird.death_done():
                 state = "dead"
-            for p in pipes:
-                if p.collides(bird_rect):
-                    state = "dead"
-
-
 
         screen.fill((13, 13, 13))
         for p in pipes:
             p.draw(screen)
         bird.draw(screen)
 
+        hud = font_hud.render(f"Score: {score}     Best: {best}", True, (180,180,180))
+        screen.blit(hud, (10,10))
+
         if state == "idle":
-            msg = font_sm.render("Click or Space to start", True, (200,200,200))
-            screen.blit(msg, (W//2 - msg.get_width() // 2, H // 2 + 30))
+            overlay = pygame.Surface((W, H), pygame.SRCALPHA)
+            overlay.fill((13, 13, 13, 100))
+            screen.blit(overlay, (0, 0))
+            draw_text_centered(screen, font_big, "Flappy Birb", H // 2 - 20)
+            draw_text_centered(screen, font_sm, "Click or Space to start", H // 2 + 16, (180,180,180))
 
         if state == "dead":
-            msg = font_sm.render("You died lol", True, (200,200,200))
-            screen.blit(msg, (W//2 - msg.get_width() // 2, H // 2))
+            draw_game_over(screen, font_big, font_sm, score, best)
             
         pygame.display.flip()
         clock.tick(FPS)
@@ -183,4 +280,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
