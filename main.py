@@ -1,6 +1,7 @@
 import pygame
 import sys
 import random
+import sys
 import json
 import os
 
@@ -76,7 +77,7 @@ class Bird:
         self.vy = FLAP 
 
     def update(self):
-        self.vy += GRAVITY
+        self.vy += GRAVITY * 1.4
         self.y += self.vy
         self.wing_phase += 0.25
 
@@ -88,11 +89,11 @@ class Bird:
             self.vy = FLAP * 0.6
 
     def update_death(self):
-        self.vy += GRAVITY * 1.4
-        self.y += self.vy
+        self.vy += GRAVITY
+        self.y += self.vy * 1.4
         self.death_x -= 1.2
         self.wing_phase += 0.1
-        if self.death_flash > 0:
+        if self.death_flash> 0:
             self.death_flash -= 1
         self.death_timer += 1
 
@@ -103,25 +104,25 @@ class Bird:
 
         color = (255,255,255) if self.death_flash > 0 else self.color
         bx = int(self.death_x) if self.dead else BIRD_X
-        
-        pygame.draw.ellipse(screen, color,
-            (bx - BIRD_R, int(self.y) - BIRD_R - 3, BIRD_R * 2, (BIRD_R - 3) * 2))
+#
+        pygame.draw.ellipse(screen, self.color,
+            (BIRD_X - BIRD_R, int(self.y) - BIRD_R - 3, BIRD_R * 2, (BIRD_R - 3) * 2))
         
         pygame.draw.ellipse(screen, (255, 255, 255),
-            (bx + 2, int(self.y) - 9, 10, 8))
+            (BIRD_X + 2, int(self.y) - 9, 10, 8))
         
         pygame.draw.circle(screen, (30, 30, 30),
-            (bx + 8, int(self.y) - 6), 3)
+            (BIRD_X + 8, int(self.y) - 6), 3)
         
-        beak = [(bx + 14, int(self.y) - 3),
-                (bx + 22, int(self.y)),
-                (bx + 14, int(self.y) + 3)]
+        beak = [(BIRD_X + 14, int(self.y) - 3),
+                (BIRD_X + 22, int(self.y)),
+                (BIRD_X + 14, int(self.y) + 3)]
         
         pygame.draw.polygon(screen, (239, 159, 39), beak)
         flap_offset = int(8 * abs(pygame.math.Vector2(1, 0).rotate(
             self.wing_phase * 57.3).y))
         
-        wing_rect = (bx - BIRD_R - 4, int(self.y) + flap_offset - 5, 14, 8)
+        wing_rect = (BIRD_X - BIRD_R - 4, int(self.y) + flap_offset - 5, 14, 8)
         pygame.draw.ellipse(screen, darken(self.color, 30), wing_rect)
 
     def get_rect(self): 
@@ -205,6 +206,7 @@ def main():
  
     #STATES = IDLE/PLAYING/DYING/DEAD
     state = "idle"
+ 
 
 
     while True:
@@ -243,18 +245,20 @@ def main():
                     if score > best:
                         best = score
                         save_best(score)
+                    
 
+ 
             bird_rect = bird.get_rect()
             hit = bird.y - BIRD_R < 0 or bird.y + BIRD_R > H
             hit = hit or any(p.collides(bird_rect) for p in pipes)
-            if hit:
+        if hit:
                 bird.die()
                 state = "dying"
             
         elif state == "dying":
             bird.update_death()
             if bird.death_done():
-                state = "dead"
+                state = "dead"  
 
         screen.fill((13, 13, 13))
         for p in pipes:
@@ -271,6 +275,7 @@ def main():
             draw_text_centered(screen, font_big, "Flappy Birb", H // 2 - 20)
             draw_text_centered(screen, font_sm, "Click or Space to start", H // 2 + 16, (180,180,180))
 
+
         if state == "dead":
             draw_game_over(screen, font_big, font_sm, score, best)
             
@@ -280,3 +285,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
