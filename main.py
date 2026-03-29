@@ -1,16 +1,14 @@
 import pygame
 import sys
 import random
-import sys
 import json
 import os
 
 
-# Constants
+#CONSTANTS
 W, H = 400, 500
 GRAVITY = 0.45
 FLAP = -8
-PIPE = -8
 PIPE_W = 55
 GAP = 200
 MIN_GAP = 60
@@ -18,7 +16,7 @@ PIPE_SPEED = 2.4
 BIRD_X = 80
 BIRD_R = 16
 FPS = 60
-GAP_DRECREASE = 3
+GAP_DECREASE = 3
 SAVE_FILE = "flappy_score.json"
 
 
@@ -57,6 +55,20 @@ def load_best():
 def save_best(best):
     with open(SAVE_FILE, "w") as f:
         json.dump({"best": best}, f)
+
+#STARS
+def make_stars():
+    return [
+        (random.randint(0, W), random.randint(0, H),
+         random.randint(1, 3), random.choice(COLORS))
+        for _ in range(30)
+    ]
+ 
+def draw_stars(screen, stars):
+    for (x, y, r, color) in stars:
+        s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (*color, 90), (r, r), r)
+        screen.blit(s, (x - r, y - r))
 
 
 #BIRB
@@ -132,7 +144,7 @@ class Bird:
 class Pipe:
     def __init__(self, x = None):
         self.x = x if x is not None else W + 10
-        self.top = random.randint(60, H- GAP - 129)
+        self.top = random.randint(50, H- GAP - 100)
         self.bot = self.top + GAP
         self.color = rc()
         self.scored = False
@@ -141,12 +153,22 @@ class Pipe:
         self.x -= PIPE_SPEED
 
     def draw(self, screen):
+
+        #TOP PIPE
         pygame.draw.rect(screen, self.color,
             (self.x, 0, PIPE_W, self.top), border_radius=4)
+        shine = pygame.Surface((10, max(0, self.top - 8)), pygame.SRCALPHA)
+        shine.fill((255,255,255,30))
+        screen.blit(shine, (self.x + 6, 4))
         pygame.draw.rect(screen, darken(self.color),
-            (self.x + PIPE_W - 6, 0, 6, self.top))
+                         (self.x + PIPE_W - 6,0,6, self.top))
+        
+        #BOTTOM PIPE
         pygame.draw.rect(screen, self.color,
             (self.x, self.bot, PIPE_W, H - self.bot), border_radius=4)
+        shine2 = pygame.Surface((10, max(0, H - self.bot - 8)), pygame.SRCALPHA)
+        shine2.fill((255, 255, 255, 30))
+        screen.blit(shine2, (self.x + 6, self.bot + 4))
         pygame.draw.rect(screen, darken(self.color),
             (self.x + PIPE_W - 6, self.bot, 6, H - self.bot))
 
@@ -192,23 +214,27 @@ def new_game():
 
 def main():
     pygame.init()
+    pygame.mixer.init()
+
     screen = pygame.display.set_mode((W, H))
     pygame.display.set_caption("Flappy Birb")
     clock = pygame.time.Clock()
-
+ 
     font_big = pygame.font.SysFont("sans-serif", 28)
     font_hud = pygame.font.SysFont("sans-serif", 18)
     font_sm = pygame.font.SysFont("sans-serif", 15)
-    
+    flap_sound = pygame.mixer.Sound("sounds/flap.wav")
+    score_sound = pygame.mixer.Sound("sounds/point.wav")
+    hit_sound = pygame.mixer.Sound("sounds/die.wav")
+ 
     best = load_best()
-
     bird, pipes, score = new_game()
+    stars = make_stars()   
  
-    #STATES = IDLE/PLAYING/DYING/DEAD
+
     state = "idle"
+    score_pop = 0             
  
-
-
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -219,12 +245,16 @@ def main():
                     continue
                 if state == "dead":
                     bird, pipes, score = new_game()
+                    stars = make_stars()
                     state = "idle"
                 elif state == "idle":
                     state = "play"
                     bird.flap()
+                    flap_sound.play()
+
                 elif state == "play":
                     bird.flap()
+                    flap_sound.play()
  
 
         if state == "play":
@@ -240,49 +270,57 @@ def main():
                 if not p.scored and p.x + PIPE_W < BIRD_X:
                     p.scored = True
                     score += 1
-                    print(score)
-                    GAP = max(MIN_GAP, GAP - GAP_DRECREASE)
+                    score_pop = 12  
+                    if score % 10 == 0:
+                        score_sound.play()
+                    GAP = max(MIN_GAP, GAP - GAP_DECREASE)
                     if score > best:
                         best = score
-                        save_best(score)
-                    
-
+                        save_best(best)
  
             bird_rect = bird.get_rect()
             hit = bird.y - BIRD_R < 0 or bird.y + BIRD_R > H
             hit = hit or any(p.collides(bird_rect) for p in pipes)
-        if hit:
+            if hit:
                 bird.die()
+                hit_sound.play()
                 state = "dying"
-            
+
+ 
         elif state == "dying":
             bird.update_death()
             if bird.death_done():
-                state = "dead"  
-
+                state = "dead"
+ 
+   
         screen.fill((13, 13, 13))
+        draw_stars(screen, stars)   
+ 
         for p in pipes:
             p.draw(screen)
         bird.draw(screen)
 
-        hud = font_hud.render(f"Score: {score}     Best: {best}", True, (180,180,180))
-        screen.blit(hud, (10,10))
-
+        if score_pop > 0:
+            pop_size = 18 + score_pop
+            font_pop = pygame.font.SysFont("sans-serif", pop_size)
+            hud = font_pop.render(f"Score: {score}    Best: {best}", True, (255, 255, 255))
+            score_pop -= 1
+        else:
+            hud = font_hud.render(f"Score: {score}    Best: {best}", True, (180, 180, 180))
+        screen.blit(hud, (10, 10))
+ 
         if state == "idle":
             overlay = pygame.Surface((W, H), pygame.SRCALPHA)
             overlay.fill((13, 13, 13, 100))
             screen.blit(overlay, (0, 0))
             draw_text_centered(screen, font_big, "Flappy Birb", H // 2 - 20)
-            draw_text_centered(screen, font_sm, "Click or Space to start", H // 2 + 16, (180,180,180))
-
-
+            draw_text_centered(screen, font_sm, "Click or Space to start", H // 2 + 16, (180, 180, 180))
+ 
         if state == "dead":
             draw_game_over(screen, font_big, font_sm, score, best)
-            
+ 
         pygame.display.flip()
         clock.tick(FPS)
-
-
-if __name__ == "__main__":
-    main()
-
+ 
+ 
+main()
