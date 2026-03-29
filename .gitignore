@@ -1,0 +1,11 @@
+# PyInstaller
+dist/
+build/
+*.spec
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Score save file - excluded so each player gets their own fresh save
+flappy_score.json
